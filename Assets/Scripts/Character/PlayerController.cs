@@ -2,63 +2,113 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
-    public float speed = 5f; // Скорость движения персонажа
-    public float jumpForce = 10f; // Сила прыжка
-    public float timeBetweenJumps = 0.5f; // Время между прыжками
+    public float moveSpeed = 5f;
+    public float sprintMultiplier = 1.5f; // Множитель скорости при беге
+    public float jumpForce = 10f;
+    public float airControlFactor = 0.5f; // Фактор управления в воздухе (от 0 до 1)
 
     private Rigidbody2D rb;
-    private bool isGrounded; // Флаг, определяющий, находится ли персонаж на земле
-    public Transform groundCheck; // Позиция для проверки, находится ли персонаж на земле
-    private float lastJumpTime; // Время последнего прыжка
+    private bool isGrounded;
+    private Animator animator;
 
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
+        rb.interpolation = RigidbodyInterpolation2D.Interpolate;
 
-        // Если объект GroundCheck не присвоен в инспекторе, выводим предупреждение
-        if (groundCheck == null)
-        {
-            Debug.LogWarning("GroundCheck is not assigned. Make sure to assign it in the inspector.");
-        }
+        // Получаем компонент Animator
+        animator = GetComponent<Animator>();
     }
 
     void Update()
     {
-        // Проверяем, находится ли персонаж на земле
-        isGrounded = Physics2D.OverlapCircle(groundCheck.position, 0.2f, LayerMask.GetMask("Ground"));
-
-        // Обработка ввода для движения по горизонтали
+        // Управление перемещением
         float horizontalInput = Input.GetAxis("Horizontal");
 
-        // Остановка персонажа, когда клавиша бега не нажата и он на земле
+        // Если персонаж находится на земле, разрешаем перемещение и бег
         if (isGrounded)
         {
-            // Если ввода нет, устанавливаем горизонтальную скорость в ноль
-            if (horizontalInput == 0)
+            Move(horizontalInput);
+
+            // Управление бегом
+            if (Input.GetKey(KeyCode.LeftShift))
             {
-                rb.velocity = new Vector2(0f, rb.velocity.y);
+                Sprint();
             }
-            else
+
+            // Управление прыжком
+            if (Input.GetKeyDown(KeyCode.Space))
             {
-                // Применяем скорость только при наличии ввода
-                Vector2 movement = new Vector2(horizontalInput * speed, rb.velocity.y);
-                rb.velocity = movement;
+                Jump();
             }
         }
-
-        // Обработка прыжка
-        if (isGrounded && Input.GetKeyDown(KeyCode.Space) && Time.time - lastJumpTime > timeBetweenJumps)
+        else
         {
-            Jump();
+            // Применяем управление в воздухе
+            AirControl(horizontalInput);
+
+            // Применяем торможение в воздухе
+            ApplyBrakes(airControlFactor);
         }
 
-        // Выводим скорость в консоль
-        Debug.Log("Speed: " + rb.velocity.x);
+        // Обновляем параметры аниматора
+        UpdateAnimatorParameters(horizontalInput);
+    }
+
+    void Move(float horizontalInput)
+    {
+        Vector2 moveDirection = new Vector2(horizontalInput, 0f);
+        rb.velocity = new Vector2(moveDirection.x * moveSpeed, rb.velocity.y);
+    }
+
+    void Sprint()
+    {
+        // Умножаем скорость на множитель при беге
+        rb.velocity = new Vector2(rb.velocity.x * sprintMultiplier, rb.velocity.y);
     }
 
     void Jump()
     {
         rb.velocity = new Vector2(rb.velocity.x, jumpForce);
-        lastJumpTime = Time.time; // Запоминаем время последнего прыжка
+    }
+
+    void AirControl(float horizontalInput)
+    {
+        // Применяем управление в воздухе
+        Vector2 currentVelocity = rb.velocity;
+        currentVelocity.x += horizontalInput * airControlFactor;
+        rb.velocity = new Vector2(Mathf.Clamp(currentVelocity.x, -moveSpeed, moveSpeed), currentVelocity.y);
+    }
+
+    void ApplyBrakes(float brakingFactor)
+    {
+        // Применяем торможение в воздухе
+        float currentSpeed = rb.velocity.x;
+        float newSpeed = Mathf.MoveTowards(currentSpeed, 0f, brakingFactor * Time.deltaTime);
+        rb.velocity = new Vector2(newSpeed, rb.velocity.y);
+    }
+
+    void UpdateAnimatorParameters(float horizontalInput)
+    {
+        // Обновляем параметры аниматора
+        animator.SetFloat("HorizontalSpeed", horizontalInput);
+        animator.SetBool("IsJumping", !isGrounded && rb.velocity.y > 0);
+        animator.SetBool("IsMoving", Mathf.Abs(horizontalInput) > 0.1f);
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (other.CompareTag("Ground"))
+        {
+            isGrounded = true;
+        }
+    }
+
+    void OnTriggerExit2D(Collider2D other)
+    {
+        if (other.CompareTag("Ground"))
+        {
+            isGrounded = false;
+        }
     }
 }
